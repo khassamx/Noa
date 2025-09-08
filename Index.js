@@ -41,15 +41,10 @@ async function startBot() {
             log(chalk.yellow('Por favor, escanea el código QR para iniciar la sesión.'));
         }
         if (connection === "close") {
-            const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            if (shouldReconnect) {
-                log(chalk.red("Conexión cerrada. Reconectando..."));
-                startBot();
-            } else {
-                log(chalk.red("Conexión cerrada. Sesión cerrada. Por favor, reinicia el bot para un nuevo QR."));
-            }
+            log(chalk.red("Conexión perdida. El bot se está reiniciando..."));
+            startBot();
         } else if (connection === "open") {
-            log(chalk.cyan("✅ Bot conectado correctamente."));
+            log(chalk.cyan("✅ Bot conectado y listo para funcionar."));
         }
     });
 
