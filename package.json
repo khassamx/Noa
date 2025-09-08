@@ -1,16 +1,18 @@
 {
-  "name": "baileys-simple-bot",
+  "name": "bot-noa",
   "version": "1.0.0",
-  "description": "Un bot de ejemplo simple",
+  "description": "Bot simple con funciones de moderación.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
-  "author": "",
+  "author": "TuNombre",
   "license": "ISC",
   "dependencies": {
     "@whiskeysockets/baileys": "github:WhiskeySockets/Baileys",
     "pino": "^9.0.0",
-    "qrcode-terminal": "^0.12.0"
+    "qrcode-terminal": "^0.12.0",
+    "chalk": "^5.3.0",
+    "dayjs": "^1.11.11"
   }
 }
