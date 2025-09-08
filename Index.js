@@ -23,7 +23,7 @@ function log(message) {
 
 // --- Función Principal del Bot ---
 async function startBot() {
-    log("Iniciando el bot...");
+    log("Iniciando el Bot");
 
     const { state, saveCreds } = await useMultiFileAuthState(SESSION_PATH);
 
@@ -56,14 +56,14 @@ async function startBot() {
         const chat = msg.key.remoteJid;
         const text = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
 
-        // Muestra el mensaje que el bot "lee"
+        // Solo procesar y mostrar mensajes de grupos
+        if (!chat.endsWith("@g.us")) return;
+
+        // Muestra el mensaje que el bot "lee" en grupos
         if (text) {
             log(chalk.white(`[MENSAJE LEÍDO] De: ${sender.split('@')[0]} | Chat: ${chat} | Contenido: "${text}"`));
         }
         
-        // Solo procesar mensajes en grupos
-        if (!chat.endsWith("@g.us")) return;
-
         let groupMetadata;
         try {
             groupMetadata = await sock.groupMetadata(chat);
