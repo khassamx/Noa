@@ -79,7 +79,7 @@ async function startBotNoa() {
                 startBotNoa();
             }
         } else if (connection === 'open') {
-            logger.success('✅ Bot Noa conectado a WhatsApp.');
+            logger.success('✅ Bot Noa conectado a WhatsApp!');
         }
     });
 
