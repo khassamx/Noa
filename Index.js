@@ -1,10 +1,8 @@
-cat > index.js << 'EOF'
 const {
   makeWASocket,
   useMultiFileAuthState,
   DisconnectReason,
   Browsers,
-  GroupMetadata,
   fetchLatestBaileysVersion
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
@@ -19,7 +17,7 @@ const SESSION_PATH = path.join(__dirname, 'session');
 const PREFIX = '.';
 const ARABIC_PREFIXES = ['966', '965', '964', '963', '962', '961', '970', '971', '973', '974', '968', '967', '249', '213', '218', '216', '212', '20'];
 
-// --- Sistema de Logs (Profesional) ---
+// --- Sistema de Logs ---
 function timestamp() {
   return dayjs().format("YYYY-MM-DD HH:mm:ss");
 }
@@ -32,7 +30,7 @@ const logger = {
   log: (...msg) => console.log(chalk.white(`[LOG ${timestamp()}]`), ...msg),
 };
 
-// --- Funciones Anti-Moderación ---
+// --- Funciones de Moderación ---
 const isUserAdmin = async (sock, groupId, userId) => {
     try {
         const groupMetadata = await sock.groupMetadata(groupId);
@@ -50,8 +48,8 @@ const isArabicUser = (userId) => {
 };
 
 // --- Función Principal del Bot ---
-async function startBotNoa() {
-    logger.info('Iniciando el bot Noa...');
+async function startBot() {
+    logger.info('Iniciando el bot...');
     
     if (!fs.existsSync(SESSION_PATH)) fs.mkdirSync(SESSION_PATH);
 
@@ -77,10 +75,10 @@ async function startBotNoa() {
             const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
             logger.warn(`Conexión cerrada. Razón: ${lastDisconnect.error?.message}. Intentando reconectar: ${shouldReconnect}`);
             if (shouldReconnect) {
-                startBotNoa();
+                startBot();
             }
         } else if (connection === 'open') {
-            logger.success('✅ Bot Noa conectado a WhatsApp!');
+            logger.success('✅ Bot conectado a WhatsApp!');
         }
     });
 
@@ -154,5 +152,4 @@ async function startBotNoa() {
     });
 }
 
-startBotNoa();
-EOF
+startBot();
