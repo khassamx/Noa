@@ -3,17 +3,19 @@ import makeWASocket, {
     useMultiFileAuthState,
     DisconnectReason,
     fetchLatestBaileysVersion,
-    makeInMemoryStore,
+    makeInMemoryStore
 } from "@whiskeysockets/baileys";
 import P from "pino";
 import fs from "fs";
 
+// Almacenamiento de estado y logs
 const store = makeInMemoryStore({ logger: P().child({ level: "silent" }) });
 const LOG_FILE = "./logs.txt";
 
-// Estructura de advertencias por grupo
+// Advertencias por grupo y usuario
 const warnings = {}; // { [groupJid]: { [userJid]: count } }
 
+// Función de log
 function logToFile(message) {
     const timestamp = new Date().toLocaleString();
     const fullMessage = `[${timestamp}] ${message}\n`;
@@ -21,6 +23,7 @@ function logToFile(message) {
     fs.appendFileSync(LOG_FILE, fullMessage);
 }
 
+// Inicio del bot
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState("auth_info");
     const { version } = await fetchLatestBaileysVersion();
@@ -35,7 +38,7 @@ async function startBot() {
     store.bind(sock.ev);
     sock.ev.on("creds.update", saveCreds);
 
-    // Función para alertar a admins
+    // Alertar a todos los admins
     async function alertAdmins(groupJid, message) {
         const groupMetadata = await sock.groupMetadata(groupJid);
         const admins = groupMetadata.participants.filter(p => p.admin).map(p => p.id);
@@ -71,7 +74,7 @@ async function startBot() {
             if (warnCount === 1) {
                 await sock.sendMessage(chat, { text: `⚠️ Advertencia 1/3: No se permiten links.` }, { quoted: msg });
             } else if (warnCount === 2) {
-                await sock.sendMessage(chat, { text: `⚠️ Advertencia 2/3: Se eliminará tu mensaje.` }, { quoted: msg });
+                await sock.sendMessage(chat, { text: `⚠️ Advertencia 2/3: Tu mensaje será eliminado.` }, { quoted: msg });
                 await sock.sendMessage(chat, { delete: msg.key });
             } else if (warnCount >= 3) {
                 await sock.sendMessage(chat, { delete: msg.key });
