@@ -35,19 +35,12 @@ async function startBot() {
 
         let target = null;
 
-        // Kick por mencionar: .kick @numero, #kick @numero, .k @numero
         if (/^(\.kick|#kick|\.k)/i.test(text)) {
             const parts = text.split(" ");
-            if (parts[1]) {
-                target = parts[1].replace("@", "") + "@s.whatsapp.net";
-            }
-        }
-        // Kick por mensaje que dice "kick usuario"
-        else if (/^kick /i.test(text)) {
+            if (parts[1]) target = parts[1].replace("@", "") + "@s.whatsapp.net";
+        } else if (/^kick /i.test(text)) {
             const parts = text.split(" ");
-            if (parts[1]) {
-                target = parts[1] + "@s.whatsapp.net"; // Asume que usuario = número
-            }
+            if (parts[1]) target = parts[1] + "@s.whatsapp.net";
         }
 
         if (!target) return;
@@ -76,5 +69,4 @@ async function startBot() {
     });
 }
 
-// Iniciar automáticamente
 startBot();
