@@ -2,14 +2,14 @@ import {
     makeWASocket,
     useMultiFileAuthState,
     DisconnectReason,
-    fetchLatestBaileysVersion,
-    makeInMemoryStore
+    fetchLatestBaileysVersion
 } from '@whiskeysockets/baileys';
 import P from 'pino';
 import fs from 'fs';
+import qrcode from 'qrcode-terminal';
 
-// Configuración y variables
-const store = makeInMemoryStore({ logger: P({ level: "silent" }) });
+// --- Configuración y Constantes ---
+const SESSION_PATH = "auth_info";
 const LOG_FILE = "./logs.txt";
 const warnings = {}; // { [groupJid]: { [userJid]: count } }
 
@@ -20,8 +20,10 @@ function logToFile(message) {
     fs.appendFileSync(LOG_FILE, fullMessage);
 }
 
+// --- Función Principal del Bot ---
 async function startBot() {
-    const { state, saveCreds } = await useMultiFileAuthState("auth_info");
+    // Esto crea la carpeta de sesión si no existe
+    const { state, saveCreds } = await useMultiFileAuthState(SESSION_PATH);
     const { version } = await fetchLatestBaileysVersion();
 
     const sock = makeWASocket({
@@ -31,23 +33,8 @@ async function startBot() {
         logger: P({ level: "silent" }),
     });
 
-    store.bind(sock.ev);
+    // Esto guarda la sesión cuando se actualiza
     sock.ev.on("creds.update", saveCreds);
-
-    // Alerta a los admins del grupo
-    async function alertAdmins(groupJid, message) {
-        try {
-            const groupMetadata = await sock.groupMetadata(groupJid);
-            const admins = groupMetadata.participants.filter(p => p.admin).map(p => p.id);
-            for (let admin of admins) {
-                if (!admin.includes(sock.user.id.split(":")[0])) {
-                    await sock.sendMessage(admin, { text: `[ALERTA] ${message}` });
-                }
-            }
-        } catch (e) {
-            logToFile(`Error al enviar alerta a los admins: ${e.message}`);
-        }
-    }
 
     sock.ev.on("messages.upsert", async (m) => {
         const msg = m.messages[0];
@@ -101,8 +88,6 @@ async function startBot() {
                 `Mensaje: ${text}\n` +
                 `Advertencia: ${warnCount}`
             );
-
-            await alertAdmins(chat, `@${sender.split('@')[0]} infringió la regla de links (Advertencia ${warnCount}/3)`);
         }
 
         // Comando .kick
@@ -144,5 +129,4 @@ async function startBot() {
     });
 }
 
-// Iniciar bot
 startBot();
