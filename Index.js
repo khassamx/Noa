@@ -1,3 +1,4 @@
+cat > index.js << 'EOF'
 const {
   makeWASocket,
   useMultiFileAuthState,
@@ -51,7 +52,7 @@ const isArabicUser = (userId) => {
 // --- Función Principal del Bot ---
 async function startBotNoa() {
     logger.info('Iniciando el bot Noa...');
-
+    
     if (!fs.existsSync(SESSION_PATH)) fs.mkdirSync(SESSION_PATH);
 
     const { state, saveCreds } = await useMultiFileAuthState(SESSION_PATH);
@@ -86,7 +87,7 @@ async function startBotNoa() {
     sock.ev.on('messages.upsert', async ({ messages }) => {
         const m = messages[0];
         if (!m.message || m.key.fromMe || m.key.id.startsWith('BAE5')) return;
-
+        
         const messageText = m.message?.conversation || m.message?.extendedTextMessage?.text || '';
         const senderJid = m.key.remoteJid;
         const isGroup = senderJid.endsWith('@g.us');
@@ -154,3 +155,4 @@ async function startBotNoa() {
 }
 
 startBotNoa();
+EOF
