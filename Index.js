@@ -1,12 +1,15 @@
-// index.js
-import * as baileys from "@whiskeysockets/baileys";
-import P from "pino";
-import fs from "fs";
+import {
+    makeWASocket,
+    useMultiFileAuthState,
+    DisconnectReason,
+    fetchLatestBaileysVersion,
+    makeInMemoryStore
+} from '@whiskeysockets/baileys';
+import P from 'pino';
+import fs from 'fs';
 
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, makeInMemoryStore: createStore } = baileys;
-
-// Configuración
-const store = createStore({ logger: P({ level: "silent" }) });
+// Configuración y variables
+const store = makeInMemoryStore({ logger: P({ level: "silent" }) });
 const LOG_FILE = "./logs.txt";
 const warnings = {}; // { [groupJid]: { [userJid]: count } }
 
@@ -31,14 +34,18 @@ async function startBot() {
     store.bind(sock.ev);
     sock.ev.on("creds.update", saveCreds);
 
-    // Alertar a todos los admins
+    // Alerta a los admins del grupo
     async function alertAdmins(groupJid, message) {
-        const groupMetadata = await sock.groupMetadata(groupJid);
-        const admins = groupMetadata.participants.filter(p => p.admin).map(p => p.id);
-        for (let admin of admins) {
-            if (!admin.includes(sock.user.id.split(":")[0])) {
-                await sock.sendMessage(admin, { text: `[ALERTA] ${message}` });
+        try {
+            const groupMetadata = await sock.groupMetadata(groupJid);
+            const admins = groupMetadata.participants.filter(p => p.admin).map(p => p.id);
+            for (let admin of admins) {
+                if (!admin.includes(sock.user.id.split(":")[0])) {
+                    await sock.sendMessage(admin, { text: `[ALERTA] ${message}` });
+                }
             }
+        } catch (e) {
+            logToFile(`Error al enviar alerta a los admins: ${e.message}`);
         }
     }
 
@@ -48,11 +55,18 @@ async function startBot() {
 
         const sender = msg.key.participant || msg.key.remoteJid;
         const chat = msg.key.remoteJid;
-        const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
+        const text = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
 
         if (!chat.endsWith("@g.us")) return;
 
-        const groupMetadata = await sock.groupMetadata(chat);
+        let groupMetadata;
+        try {
+            groupMetadata = await sock.groupMetadata(chat);
+        } catch (e) {
+            logToFile(`Error al obtener metadatos del grupo: ${e.message}`);
+            return;
+        }
+
         const botAdmin = groupMetadata.participants.find(p => p.id.includes(sock.user.id.split(":")[0]))?.admin || false;
 
         if (!warnings[chat]) warnings[chat] = {};
@@ -60,7 +74,7 @@ async function startBot() {
 
         // Anti-link
         if (text && /(https?:\/\/[^\s]+)/.test(text)) {
-            warnings[chat][sender] += 1;
+            warnings[chat][sender]++;
             const warnCount = warnings[chat][sender];
 
             if (warnCount === 1) {
@@ -72,10 +86,10 @@ async function startBot() {
                 await sock.sendMessage(chat, { delete: msg.key });
                 if (botAdmin) {
                     await sock.groupParticipantsUpdate(chat, [sender], "remove");
-                    await sock.sendMessage(chat, { text: `❌ ${sender} eliminado por tercera infracción.` });
+                    await sock.sendMessage(chat, { text: `❌ @${sender.split('@')[0]} eliminado por tercera infracción.` });
                     logToFile(`${sender} kickeado en ${groupMetadata.subject} (3ra infracción)`);
                 } else {
-                    logToFile(`No se pudo kickear a ${sender}, el bot no es admin.`);
+                    logToFile(`No se pudo kickear a ${sender} en ${groupMetadata.subject}, el bot no es admin.`);
                 }
                 warnings[chat][sender] = 0;
             }
@@ -85,11 +99,10 @@ async function startBot() {
                 `Bot admin: ${botAdmin}\n` +
                 `Número remitente: ${sender}\n` +
                 `Mensaje: ${text}\n` +
-                `Advertencia: ${warnCount}\n` +
-                `Miembros: ${groupMetadata.participants.map(p => p.id).join(", ")}`
+                `Advertencia: ${warnCount}`
             );
 
-            await alertAdmins(chat, `${sender} infringió regla de links (Advertencia ${warnCount}/3)`);
+            await alertAdmins(chat, `@${sender.split('@')[0]} infringió la regla de links (Advertencia ${warnCount}/3)`);
         }
 
         // Comando .kick
@@ -99,12 +112,18 @@ async function startBot() {
                 await sock.sendMessage(chat, { text: "❌ Solo admins pueden usar este comando." }, { quoted: msg });
                 return;
             }
-            const target = text.split(" ")[1];
-            if (!target) return;
+            
+            const mentions = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+            if (mentions.length === 0) {
+                await sock.sendMessage(chat, { text: "❌ Por favor, menciona a un usuario para expulsarlo." }, { quoted: msg });
+                return;
+            }
+
+            const target = mentions[0];
 
             if (botAdmin) {
-                await sock.groupParticipantsUpdate(chat, [target + "@s.whatsapp.net"], "remove");
-                await sock.sendMessage(chat, { text: `✅ ${target} ha sido eliminado por admin.` });
+                await sock.groupParticipantsUpdate(chat, [target], "remove");
+                await sock.sendMessage(chat, { text: `✅ @${target.split('@')[0]} ha sido eliminado por admin.` });
                 logToFile(`${target} kickeado por admin en ${groupMetadata.subject}`);
             } else {
                 await sock.sendMessage(chat, { text: "❌ No puedo kickear, necesito ser admin." });
@@ -116,7 +135,7 @@ async function startBot() {
         const { connection, lastDisconnect } = update;
         if (connection === "close") {
             logToFile("Conexión cerrada, reintentando...");
-            if ((lastDisconnect.error)?.output?.statusCode !== baileys.DisconnectReason.loggedOut) {
+            if ((lastDisconnect.error)?.output?.statusCode !== DisconnectReason.loggedOut) {
                 startBot();
             }
         } else if (connection === "open") {
