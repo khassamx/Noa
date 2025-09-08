@@ -11,7 +11,7 @@ import fs from 'fs';
 // --- Configuración y Constantes ---
 const SESSION_PATH = "auth_info";
 const LOG_FILE = "./logs.txt";
-global.owner = ["393939393939"]; 
+global.owner = ["393939393939"];
 
 // --- Sistema de Logs ---
 function log(message) {
@@ -63,7 +63,7 @@ async function startBot() {
         if (text) {
             log(chalk.white(`[MENSAJE LEÍDO] De: ${sender.split('@')[0]} | Chat: ${chat} | Contenido: "${text}"`));
         }
-        
+
         let groupMetadata;
         try {
             groupMetadata = await sock.groupMetadata(chat);
@@ -78,7 +78,7 @@ async function startBot() {
         // --- Múltiples Comandos de Kick ---
         const kickCommands = [".k", ".kick", "kick", "Kick", "#kick", "echar", "hechar", "sacar", "ban"];
         const isKickCommand = kickCommands.some(cmd => text.startsWith(cmd));
-        
+
         if (isKickCommand) {
             if (!senderIsAdmin) {
                 await sock.sendMessage(chat, { text: "❌ Solo los administradores pueden usar este comando." }, { quoted: msg });
@@ -109,7 +109,7 @@ async function startBot() {
             // Validaciones de seguridad
             const botOwnerJid = global.owner[0] + '@s.whatsapp.net';
             const groupOwnerJid = groupMetadata.owner || chat.split`-`[0] + '@s.whatsapp.net';
-            
+
             if (target === sock.user.jid) {
                 await sock.sendMessage(chat, { text: '❌ No puedo expulsarme a mí mismo.' }, { quoted: msg });
                 return;
@@ -122,10 +122,10 @@ async function startBot() {
                 await sock.sendMessage(chat, { text: '❌ No se puede expulsar al dueño del bot.' }, { quoted: msg });
                 return;
             }
-            
+
             // Eliminar el mensaje que activó el comando
             await sock.sendMessage(chat, { delete: msg.key });
-            
+
             try {
                 await sock.groupParticipantsUpdate(chat, [target], "remove");
                 await sock.sendMessage(chat, { react: { text: '👟', key: msg.key } }); // Reacción en el mensaje original
