@@ -1,0 +1,16 @@
+{
+  "name": "baileys-simple-bot",
+  "version": "1.0.0",
+  "description": "Un bot de ejemplo simple",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@whiskeysockets/baileys": "github:WhiskeySockets/Baileys",
+    "pino": "^9.0.0",
+    "qrcode-terminal": "^0.12.0"
+  }
+}
