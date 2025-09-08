@@ -12,7 +12,7 @@ import fs from 'fs';
 const SESSION_PATH = "auth_info";
 const LOG_FILE = "./logs.txt";
 // Este es el número del dueño del bot, sin el @s.whatsapp.net
-global.owner = ["393939393939"]; 
+global.owner = ["595986114722"]; 
 
 // --- Sistema de Logs ---
 function log(message) {
