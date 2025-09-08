@@ -1,153 +1,131 @@
-const {
-  makeWASocket,
-  useMultiFileAuthState,
-  DisconnectReason,
-  Browsers,
-  fetchLatestBaileysVersion
-} = require('@whiskeysockets/baileys');
-const pino = require('pino');
-const qrcode = require('qrcode-terminal');
-const chalk = require("chalk");
-const dayjs = require("dayjs");
-const fs = require('fs');
-const path = require('path');
+// index.js
+import makeWASocket, {
+    useMultiFileAuthState,
+    DisconnectReason,
+    fetchLatestBaileysVersion,
+    makeInMemoryStore,
+} from "@whiskeysockets/baileys";
+import P from "pino";
+import fs from "fs";
 
-// --- Configuración y Constantes ---
-const SESSION_PATH = path.join(__dirname, 'session');
-const PREFIX = '.';
-const ARABIC_PREFIXES = ['966', '965', '964', '963', '962', '961', '970', '971', '973', '974', '968', '967', '249', '213', '218', '216', '212', '20'];
+const store = makeInMemoryStore({ logger: P().child({ level: "silent" }) });
+const LOG_FILE = "./logs.txt";
 
-// --- Sistema de Logs ---
-function timestamp() {
-  return dayjs().format("YYYY-MM-DD HH:mm:ss");
+// Estructura de advertencias por grupo
+const warnings = {}; // { [groupJid]: { [userJid]: count } }
+
+function logToFile(message) {
+    const timestamp = new Date().toLocaleString();
+    const fullMessage = `[${timestamp}] ${message}\n`;
+    console.log(fullMessage);
+    fs.appendFileSync(LOG_FILE, fullMessage);
 }
 
-const logger = {
-  info: (...msg) => console.log(chalk.blue(`[INFO ${timestamp()}]`), ...msg),
-  warn: (...msg) => console.log(chalk.yellow(`[WARN ${timestamp()}]`), ...msg),
-  error: (...msg) => console.log(chalk.red(`[ERROR ${timestamp()}]`), ...msg),
-  success: (...msg) => console.log(chalk.green(`[SUCCESS ${timestamp()}]`), ...msg),
-  log: (...msg) => console.log(chalk.white(`[LOG ${timestamp()}]`), ...msg),
-};
-
-// --- Funciones de Moderación ---
-const isUserAdmin = async (sock, groupId, userId) => {
-    try {
-        const groupMetadata = await sock.groupMetadata(groupId);
-        const user = groupMetadata.participants.find(p => p.id === userId);
-        return user && (user.admin === 'superadmin' || user.admin === 'admin');
-    } catch (e) {
-        logger.error(`Error al verificar si el usuario es admin: ${e.message}`);
-        return false;
-    }
-};
-
-const isArabicUser = (userId) => {
-    const countryCode = userId.split('@')[0].substring(0, 3);
-    return ARABIC_PREFIXES.includes(countryCode);
-};
-
-// --- Función Principal del Bot ---
 async function startBot() {
-    logger.info('Iniciando el bot...');
-    
-    if (!fs.existsSync(SESSION_PATH)) fs.mkdirSync(SESSION_PATH);
-
-    const { state, saveCreds } = await useMultiFileAuthState(SESSION_PATH);
+    const { state, saveCreds } = await useMultiFileAuthState("auth_info");
     const { version } = await fetchLatestBaileysVersion();
 
-    const sock = makeWASocket({
+    const sock = makeWASocket.default({
         version,
+        printQRInTerminal: true,
         auth: state,
-        browser: Browsers.macOS("Desktop"),
-        logger: pino({ level: 'silent' })
+        logger: P({ level: "silent" }),
     });
 
-    sock.ev.on('creds.update', saveCreds);
+    store.bind(sock.ev);
+    sock.ev.on("creds.update", saveCreds);
 
-    sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect, qr } = update;
-        if (qr) {
-            qrcode.generate(qr, { small: true });
-            logger.info('Por favor, escanea el código QR para iniciar la sesión.');
+    // Función para alertar a admins
+    async function alertAdmins(groupJid, message) {
+        const groupMetadata = await sock.groupMetadata(groupJid);
+        const admins = groupMetadata.participants.filter(p => p.admin).map(p => p.id);
+        for (let admin of admins) {
+            if (!admin.includes(sock.user.id.split(":")[0])) {
+                await sock.sendMessage(admin, { text: `[ALERTA] ${message}` });
+            }
         }
-        if (connection === 'close') {
-            const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            logger.warn(`Conexión cerrada. Razón: ${lastDisconnect.error?.message}. Intentando reconectar: ${shouldReconnect}`);
-            if (shouldReconnect) {
+    }
+
+    sock.ev.on("messages.upsert", async (m) => {
+        const msg = m.messages[0];
+        if (!msg.message || msg.key.fromMe) return;
+
+        const sender = msg.key.participant || msg.key.remoteJid;
+        const chat = msg.key.remoteJid;
+        const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
+
+        if (!chat.endsWith("@g.us")) return;
+
+        const groupMetadata = await sock.groupMetadata(chat);
+        const botAdmin = groupMetadata.participants.find(p => p.id.includes(sock.user.id.split(":")[0]))?.admin || false;
+
+        // Inicializar warnings
+        if (!warnings[chat]) warnings[chat] = {};
+        if (!warnings[chat][sender]) warnings[chat][sender] = 0;
+
+        // Anti-link
+        if (text && /(https?:\/\/[^\s]+)/.test(text)) {
+            warnings[chat][sender] += 1;
+            const warnCount = warnings[chat][sender];
+
+            if (warnCount === 1) {
+                await sock.sendMessage(chat, { text: `⚠️ Advertencia 1/3: No se permiten links.` }, { quoted: msg });
+            } else if (warnCount === 2) {
+                await sock.sendMessage(chat, { text: `⚠️ Advertencia 2/3: Se eliminará tu mensaje.` }, { quoted: msg });
+                await sock.sendMessage(chat, { delete: msg.key });
+            } else if (warnCount >= 3) {
+                await sock.sendMessage(chat, { delete: msg.key });
+                if (botAdmin) {
+                    await sock.groupParticipantsUpdate(chat, [sender], "remove");
+                    await sock.sendMessage(chat, { text: `❌ ${sender} eliminado por tercera infracción.` });
+                    logToFile(`${sender} kickeado en ${groupMetadata.subject} (3ra infracción)`);
+                } else {
+                    logToFile(`No se pudo kickear a ${sender}, el bot no es admin.`);
+                }
+                warnings[chat][sender] = 0;
+            }
+
+            logToFile(
+                `Grupo: ${groupMetadata.subject}\n` +
+                `Bot admin: ${botAdmin}\n` +
+                `Número remitente: ${sender}\n` +
+                `Mensaje: ${text}\n` +
+                `Advertencia: ${warnCount}\n` +
+                `Miembros: ${groupMetadata.participants.map(p => p.id).join(", ")}`
+            );
+
+            await alertAdmins(chat, `${sender} infringió regla de links (Advertencia ${warnCount}/3)`);
+        }
+
+        // Comando .kick
+        if (text && text.startsWith(".kick")) {
+            const senderAdmin = groupMetadata.participants.find(p => p.id === sender)?.admin;
+            if (!senderAdmin) {
+                await sock.sendMessage(chat, { text: "❌ Solo admins pueden usar este comando." }, { quoted: msg });
+                return;
+            }
+            const target = text.split(" ")[1];
+            if (!target) return;
+
+            if (botAdmin) {
+                await sock.groupParticipantsUpdate(chat, [target + "@s.whatsapp.net"], "remove");
+                await sock.sendMessage(chat, { text: `✅ ${target} ha sido eliminado por admin.` });
+                logToFile(`${target} kickeado por admin en ${groupMetadata.subject}`);
+            } else {
+                await sock.sendMessage(chat, { text: "❌ No puedo kickear, necesito ser admin." });
+            }
+        }
+    });
+
+    sock.ev.on("connection.update", (update) => {
+        const { connection, lastDisconnect } = update;
+        if (connection === "close") {
+            logToFile("Conexión cerrada, reintentando...");
+            if ((lastDisconnect.error)?.output?.statusCode !== DisconnectReason.loggedOut) {
                 startBot();
             }
-        } else if (connection === 'open') {
-            logger.success('✅ Bot conectado a WhatsApp!');
-        }
-    });
-
-    sock.ev.on('messages.upsert', async ({ messages }) => {
-        const m = messages[0];
-        if (!m.message || m.key.fromMe || m.key.id.startsWith('BAE5')) return;
-        
-        const messageText = m.message?.conversation || m.message?.extendedTextMessage?.text || '';
-        const senderJid = m.key.remoteJid;
-        const isGroup = senderJid.endsWith('@g.us');
-
-        // --- Anti-Link (para grupos) ---
-        const linkRegex = /(https?:\/\/|www\.)[^\s]+/gi;
-        if (isGroup && messageText.match(linkRegex)) {
-            const senderIsAdmin = await isUserAdmin(sock, senderJid, m.key.participant || m.key.remoteJid);
-            if (!senderIsAdmin) {
-                logger.warn(`🚫 Anti-Link: ${m.key.participant || m.key.remoteJid} ha enviado un enlace.`);
-                try {
-                    await sock.sendMessage(senderJid, { delete: m.key });
-                    await sock.groupParticipantsUpdate(senderJid, [m.key.participant || m.key.remoteJid], 'remove');
-                    await sock.sendMessage(senderJid, { text: '🚫 Se ha detectado un enlace no permitido. El usuario ha sido expulsado.' });
-                } catch (e) {
-                    logger.error(`❌ Error al expulsar usuario por anti-link: ${e.message}`);
-                }
-                return;
-            }
-        }
-
-        // --- Comando .kick (solo para admins) ---
-        if (isGroup && messageText.startsWith(PREFIX + 'kick')) {
-            const senderIsAdmin = await isUserAdmin(sock, senderJid, m.key.participant || m.key.remoteJid);
-            if (!senderIsAdmin) {
-                await sock.sendMessage(senderJid, { text: '❌ Solo los administradores pueden usar este comando.' });
-                return;
-            }
-
-            const mentions = m.message?.extendedTextMessage?.contextInfo?.mentionedJid;
-            if (!mentions || mentions.length === 0) {
-                await sock.sendMessage(senderJid, { text: '❌ Por favor, menciona a un usuario para expulsarlo.' });
-                return;
-            }
-
-            const userToKick = mentions[0];
-            try {
-                await sock.groupParticipantsUpdate(senderJid, [userToKick], 'remove');
-                await sock.sendMessage(senderJid, { text: `✅ Usuario @${userToKick.split('@')[0]} ha sido expulsado.` });
-                logger.info(`Comando .kick ejecutado en ${senderJid} para expulsar a ${userToKick}.`);
-            } catch (e) {
-                logger.error(`❌ Error al expulsar al usuario con .kick: ${e.message}`);
-                await sock.sendMessage(senderJid, { text: '❌ No pude expulsar al usuario. Asegúrate de que el bot tiene permisos de administrador.' });
-            }
-        }
-    });
-
-    // --- Anti-Árabe (siempre activo al unirse) ---
-    sock.ev.on('group-participants.update', async (groupData) => {
-        const { id, participants, action } = groupData;
-        if (action === 'add') {
-            const newMemberJid = participants[0];
-            if (isArabicUser(newMemberJid)) {
-                logger.warn(`🚫 Anti-Árabe: ${newMemberJid} se unió. Expulsándolo.`);
-                try {
-                    await sock.groupParticipantsUpdate(id, [newMemberJid], 'remove');
-                    await sock.sendMessage(id, { text: '🚫 Un usuario con un prefijo de país no permitido se ha unido y ha sido expulsado.' });
-                } catch (e) {
-                    logger.error(`❌ Error al expulsar usuario por anti-árabe: ${e.message}`);
-                    await sock.sendMessage(id, { text: '❌ Un usuario no permitido se ha unido, pero el bot no tiene permisos para expulsarlo.' });
-                }
-            }
+        } else if (connection === "open") {
+            logToFile("✅ Bot conectado correctamente.");
         }
     });
 }
