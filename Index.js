@@ -1,24 +1,12 @@
 // index.js
-import { execSync } from "child_process";
-import fs from "fs";
-
-// Auto-instalar dependencias si no existen
-try {
-    require.resolve("@whiskeysockets/baileys");
-    require.resolve("pino");
-} catch (e) {
-    console.log("Instalando dependencias...");
-    execSync("npm install @whiskeysockets/baileys@5.0.0 pino", { stdio: "inherit" });
-    console.log("Dependencias instaladas.");
-}
-
 import * as baileys from "@whiskeysockets/baileys";
 import P from "pino";
+import fs from "fs";
 
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = baileys;
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, makeInMemoryStore: createStore } = baileys;
 
-// Configuración de logs y almacenamiento
-const store = baileys.makeInMemoryStore({ logger: P().child({ level: "silent" }) });
+// Configuración
+const store = createStore({ logger: P({ level: "silent" }) });
 const LOG_FILE = "./logs.txt";
 const warnings = {}; // { [groupJid]: { [userJid]: count } }
 
@@ -137,5 +125,5 @@ async function startBot() {
     });
 }
 
-// Iniciar automáticamente
+// Iniciar bot
 startBot();
