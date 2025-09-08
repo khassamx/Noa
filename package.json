@@ -1,0 +1,10 @@
+{
+  "name": "bot-noa",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": { "start": "node index.js" },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^5.0.16",
+    "pino": "^8.0.0"
+  }
+}
