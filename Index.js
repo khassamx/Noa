@@ -1,14 +1,14 @@
 import {
-  makeWASocket,
-  useMultiFileAuthState,
-  DisconnectReason
+    makeWASocket,
+    useMultiFileAuthState,
+    DisconnectReason
 } from '@whiskeysockets/baileys';
 import P from 'pino';
 import qrcode from 'qrcode-terminal';
 import chalk from 'chalk';
 import fs from 'fs';
 
-// --- Configuración ---
+// --- Configuración y Constantes ---
 const SESSION_PATH = "auth_info";
 const LOG_FILE = "./logs.txt";
 
@@ -20,7 +20,7 @@ function log(message) {
     fs.appendFileSync(LOG_FILE, fullMessage);
 }
 
-// --- Función Principal ---
+// --- Función Principal del Bot ---
 async function startBot() {
     log("Iniciando el bot...");
 
@@ -52,14 +52,67 @@ async function startBot() {
         }
     });
 
-    // Manejador de mensajes simple para demostrar que funciona
     sock.ev.on("messages.upsert", async ({ messages }) => {
         const msg = messages[0];
-        if (!msg.message) return;
-        const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
+        if (!msg.message || msg.key.fromMe) return;
 
-        if (text === ".hola") {
-            await sock.sendMessage(msg.key.remoteJid, { text: "¡Hola! Estoy en línea y funcionando." });
+        const sender = msg.key.participant || msg.key.remoteJid;
+        const chat = msg.key.remoteJid;
+        const text = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+
+        // Muestra el mensaje que el bot "lee"
+        if (text) {
+            log(chalk.white(`[MENSAJE LEÍDO] De: ${sender.split('@')[0]} | Chat: ${chat} | Contenido: "${text}"`));
+        }
+        
+        // Solo procesar mensajes en grupos
+        if (!chat.endsWith("@g.us")) return;
+
+        let groupMetadata;
+        try {
+            groupMetadata = await sock.groupMetadata(chat);
+        } catch (e) {
+            log(chalk.red(`Error al obtener metadatos del grupo: ${e.message}`));
+            return;
+        }
+
+        const botIsAdmin = groupMetadata.participants.find(p => p.id.includes(sock.user.id.split(":")[0]))?.admin || false;
+        const senderIsAdmin = groupMetadata.participants.find(p => p.id === sender)?.admin;
+
+        // --- Múltiples Comandos de Kick ---
+        const kickCommands = [".k", ".kick", "kick", "Kick", "#kick"];
+        const isKickCommand = kickCommands.some(cmd => text.startsWith(cmd));
+        
+        if (isKickCommand) {
+            if (!senderIsAdmin) {
+                await sock.sendMessage(chat, { text: "❌ Solo los administradores pueden usar este comando." }, { quoted: msg });
+                return;
+            }
+            if (!botIsAdmin) {
+                await sock.sendMessage(chat, { text: "❌ No puedo kickear, necesito ser admin." }, { quoted: msg });
+                return;
+            }
+            
+            const mentions = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+            
+            if (mentions.length === 0) {
+                await sock.sendMessage(chat, { text: "❌ Por favor, menciona a un usuario para expulsarlo." }, { quoted: msg });
+                return;
+            }
+
+            const target = mentions[0];
+
+            // Eliminar el mensaje que activó el comando
+            await sock.sendMessage(chat, { delete: msg.key });
+            
+            try {
+                await sock.groupParticipantsUpdate(chat, [target], "remove");
+                await sock.sendMessage(chat, { text: `✅ @${target.split('@')[0]} ha sido eliminado por un admin.` });
+                log(chalk.green(`[COMANDO] ${sender.split('@')[0]} expulsó a ${target.split('@')[0]} de ${groupMetadata.subject}`));
+            } catch (e) {
+                log(chalk.red(`Error al expulsar a ${target}: ${e.message}`));
+                await sock.sendMessage(chat, { text: `❌ Error al kickear a @${target.split('@')[0]}. Asegúrate de que no es un administrador.` });
+            }
         }
     });
 
