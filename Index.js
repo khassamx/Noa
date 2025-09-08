@@ -11,7 +11,6 @@ import fs from 'fs';
 // --- Configuración y Constantes ---
 const SESSION_PATH = "auth_info";
 const LOG_FILE = "./logs.txt";
-// Este es el número del dueño del bot, sin el @s.whatsapp.net
 global.owner = ["393939393939"]; 
 
 // --- Sistema de Logs ---
@@ -44,7 +43,8 @@ async function startBot() {
         if (connection === "close") {
             const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
             if (shouldReconnect) {
-                log(chalk.red("Conexión cerrada. El bot se ha desconectado. Por favor, reinícialo manualmente."));
+                log(chalk.red("Conexión cerrada. Reconectando..."));
+                startBot();
             } else {
                 log(chalk.red("Conexión cerrada. Sesión cerrada. Por favor, reinicia el bot para un nuevo QR."));
             }
