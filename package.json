@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node index.js"
   },
-  "author": "TuNombre",
+  "author": "NoaDevStudio",
   "license": "ISC",
   "dependencies": {
     "@whiskeysockets/baileys": "github:WhiskeySockets/Baileys",
