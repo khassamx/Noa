@@ -1,21 +1,27 @@
 // index.js
-import makeWASocket, {
-    useMultiFileAuthState,
-    DisconnectReason,
-    fetchLatestBaileysVersion,
-    makeInMemoryStore
-} from "@whiskeysockets/baileys";
-import P from "pino";
+import { execSync } from "child_process";
 import fs from "fs";
 
-// Almacenamiento de estado y logs
-const store = makeInMemoryStore({ logger: P().child({ level: "silent" }) });
-const LOG_FILE = "./logs.txt";
+// Auto-instalar dependencias si no existen
+try {
+    require.resolve("@whiskeysockets/baileys");
+    require.resolve("pino");
+} catch (e) {
+    console.log("Instalando dependencias...");
+    execSync("npm install @whiskeysockets/baileys@5.0.0 pino", { stdio: "inherit" });
+    console.log("Dependencias instaladas.");
+}
 
-// Advertencias por grupo y usuario
+import * as baileys from "@whiskeysockets/baileys";
+import P from "pino";
+
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = baileys;
+
+// Configuración de logs y almacenamiento
+const store = baileys.makeInMemoryStore({ logger: P().child({ level: "silent" }) });
+const LOG_FILE = "./logs.txt";
 const warnings = {}; // { [groupJid]: { [userJid]: count } }
 
-// Función de log
 function logToFile(message) {
     const timestamp = new Date().toLocaleString();
     const fullMessage = `[${timestamp}] ${message}\n`;
@@ -23,12 +29,11 @@ function logToFile(message) {
     fs.appendFileSync(LOG_FILE, fullMessage);
 }
 
-// Inicio del bot
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState("auth_info");
     const { version } = await fetchLatestBaileysVersion();
 
-    const sock = makeWASocket.default({
+    const sock = makeWASocket({
         version,
         printQRInTerminal: true,
         auth: state,
@@ -62,7 +67,6 @@ async function startBot() {
         const groupMetadata = await sock.groupMetadata(chat);
         const botAdmin = groupMetadata.participants.find(p => p.id.includes(sock.user.id.split(":")[0]))?.admin || false;
 
-        // Inicializar warnings
         if (!warnings[chat]) warnings[chat] = {};
         if (!warnings[chat][sender]) warnings[chat][sender] = 0;
 
@@ -124,7 +128,7 @@ async function startBot() {
         const { connection, lastDisconnect } = update;
         if (connection === "close") {
             logToFile("Conexión cerrada, reintentando...");
-            if ((lastDisconnect.error)?.output?.statusCode !== DisconnectReason.loggedOut) {
+            if ((lastDisconnect.error)?.output?.statusCode !== baileys.DisconnectReason.loggedOut) {
                 startBot();
             }
         } else if (connection === "open") {
@@ -133,4 +137,5 @@ async function startBot() {
     });
 }
 
+// Iniciar automáticamente
 startBot();
